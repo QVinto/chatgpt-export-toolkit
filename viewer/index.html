@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>ChatGPT Export — prehliadač</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--txt:#e6e8ee;--mut:#9aa3b2;--acc:#4c8bf5;--user:#1f3a5f;--asst:#222732;}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font:15px/1.55 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);display:flex;overflow:hidden;-webkit-text-size-adjust:100%}
+  #side{width:380px;min-width:300px;max-width:46vw;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+  #side h1{font-size:14px;margin:0;padding:12px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:8px}
+  #side h1 .cnt{color:var(--mut);font-weight:400;font-size:12px;white-space:nowrap}
+  .ctrls{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+  .ctrls input,.ctrls select{width:100%;padding:11px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--txt);font-size:16px}
+  .row{display:flex;gap:8px}
+  .row select{flex:1}
+  .hint{color:var(--mut);font-size:11px}
+  #list{overflow:auto;flex:1;-webkit-overflow-scrolling:touch}
+  .item{padding:13px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+  .item:active{background:var(--panel2)}
+  @media(hover:hover){.item:hover{background:var(--panel2)}}
+  .item.sel{background:#243049;border-left:3px solid var(--acc);padding-left:11px}
+  .item .t{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .m{color:var(--mut);font-size:11px;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+  .tag{background:#2b3550;color:#aac4ff;border-radius:5px;padding:0 6px;font-size:10px}
+  .snip{color:var(--mut);font-size:11px;margin-top:3px;font-style:italic}
+  #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  #mhead{padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);font-weight:600;display:flex;align-items:flex-start;gap:10px}
+  #mhead .htxt{flex:1;min-width:0}
+  #mhead .sub{color:var(--mut);font-weight:400;font-size:12px;margin-top:2px}
+  #back{display:none;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:8px 12px;font-size:15px;cursor:pointer;flex:none}
+  #msgs{overflow:auto;flex:1;padding:16px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+  .msg{max-width:820px;padding:11px 14px;border-radius:12px;word-wrap:break-word;overflow-wrap:anywhere}
+  .msg .who{font-size:11px;color:var(--mut);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+  .msg.user{background:var(--user);align-self:flex-end}
+  .msg.assistant{background:var(--asst);align-self:flex-start}
+  .msg.tool{background:#2a2434;align-self:flex-start}
+  .msg img{max-width:100%;height:auto;border-radius:8px;margin-top:8px;display:block;border:1px solid var(--line)}
+  .msg pre{background:#0c0e13;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;font:12.5px/1.45 ui-monospace,Consolas,monospace}
+  .msg code{background:#0c0e13;border-radius:4px;padding:1px 5px;font:12.5px ui-monospace,monospace}
+  .empty{color:var(--mut);margin:auto;text-align:center;padding:20px}
+  .imgmiss{color:#e0a060;font-size:12px;margin-top:6px}
+  .archbtn{width:100%;padding:10px;background:#2b3550;color:#aac4ff;border:1px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;text-align:left}
+  .archbtn:active{background:#243049}
+  @media(hover:hover){.archbtn:hover{background:#34406b}}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+  .gi{display:flex;flex-direction:column;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden;text-decoration:none;color:var(--mut)}
+  .gi img{width:100%;height:130px;object-fit:cover;display:block;background:#0c0e13}
+  .gi span{font-size:10px;padding:5px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dlist{margin-top:18px}
+  .dlist h3{font-size:13px;color:var(--mut);margin:0 0 8px;font-weight:600}
+  .dfile{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;text-decoration:none;color:var(--txt);background:var(--panel2)}
+  .dfile:active{background:#243049}
+  .dfile .sz{color:var(--mut);font-size:12px;flex:none}
+  .dfile .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ---------- MOBIL ---------- */
+  @media (max-width:820px){
+    body{flex-direction:column}
+    #side{width:100%;max-width:100%;min-width:0;height:100dvh;resize:none}
+    #main{width:100%;height:100dvh;display:none}
+    body.show-conv #side{display:none}
+    body.show-conv #main{display:flex}
+    #back{display:block}
+    .msg{max-width:100%}
+    #msgs{padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+  }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>ChatGPT export <span class="cnt" id="cnt">…</span></h1>
+  <div class="ctrls">
+    <input id="q" placeholder="Hľadať… (Enter = aj v texte)" enterkeyhint="search">
+    <div class="row">
+      <select id="proj"><option value="">Všetky projekty</option></select>
+      <select id="sort"><option value="upd">Najnovšie</option><option value="old">Najstaršie</option><option value="az">A–Z</option></select>
+    </div>
+    <div class="hint" id="hint"></div>
+    <button id="archBtn" class="archbtn">📦 Oficiálny archív</button>
+  </div>
+  <div id="list"></div>
+</div>
+<div id="main">
+  <div id="mhead"><button id="back" aria-label="Späť">←</button><div class="htxt" id="htxt">Vyber konverzáciu</div></div>
+  <div id="msgs"><div class="empty">Klikni na konverzáciu</div></div>
+</div>
+<script>
+let ALL=[], VIEW=[], SEL=null, MODE='list';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function fmtDate(t){ if(!t) return ''; const d=new Date(t*1000); return d.toLocaleString('sk-SK',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
+function md(t){ let s=esc(t);
+  s=s.replace(/```([\s\S]*?)```/g,(m,c)=>'<pre>'+c.replace(/^\n/,'')+'</pre>');
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  s=s.replace(/\n/g,'<br>'); return s; }
+async function loadList(){
+  const r=await fetch('/api/list'); const d=await r.json();
+  ALL=d.items; $('#cnt').textContent=d.count;
+  const sel=$('#proj'); const cur=sel.value;
+  sel.innerHTML='<option value="">Všetky projekty ('+d.count+')</option>'+d.projects.map(p=>'<option value="'+esc(p)+'">📁 '+esc(p)+'</option>').join('');
+  sel.value=cur;
+  render();
+}
+function render(){
+  const q=$('#q').value.trim().toLowerCase(); const proj=$('#proj').value; const sort=$('#sort').value;
+  let arr = MODE==='search' ? VIEW.slice() : ALL.slice();
+  if(proj) arr=arr.filter(i=>i.project===proj);
+  if(MODE!=='search' && q) arr=arr.filter(i=>(i.title||'').toLowerCase().includes(q));
+  if(sort==='upd') arr.sort((a,b)=>(b.update_time||0)-(a.update_time||0));
+  else if(sort==='old') arr.sort((a,b)=>(a.update_time||0)-(b.update_time||0));
+  else arr.sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  $('#hint').textContent=(MODE==='search'?'výsledky v texte: ':'zobrazené: ')+arr.length;
+  $('#list').innerHTML=arr.map(i=>`<div class="item${SEL===i.file?' sel':''}" data-f="${esc(i.file)}">
+    <div class="t">${esc(i.title)}</div>
+    <div class="m">${i.project?'<span class="tag">📁 '+esc(i.project)+'</span>':''}<span>${fmtDate(i.update_time)}</span></div>
+    ${i.snippet?'<div class="snip">…'+esc(i.snippet)+'…</div>':''}</div>`).join('')||'<div class="empty">Nič</div>';
+  [...document.querySelectorAll('.item')].forEach(el=>el.onclick=()=>openConv(el.dataset.f));
+}
+async function openConv(file){
+  SEL=file; render(); document.body.classList.add('show-conv');
+  $('#htxt').textContent='Načítavam…'; $('#msgs').innerHTML='<div class="empty">…</div>';
+  const r=await fetch('/api/conv?file='+encodeURIComponent(file)); const d=await r.json();
+  $('#htxt').innerHTML=esc(d.title)+'<div class="sub">'+fmtDate(d.create_time)+' · '+d.messages.length+' správ</div>';
+  $('#msgs').innerHTML=d.messages.map(m=>`<div class="msg ${m.role}"><div class="who">${esc(m.role)}</div>${md(m.text)}${
+    m.images.map(im=>{ if(!im.url) return '<div class="imgmiss">⊘ príloha ešte nestiahnutá ('+esc(im.id)+')</div>';
+      if(im.kind==='image') return '<img loading="lazy" src="'+im.url+'">';
+      if(im.kind==='audio') return '<audio controls preload="none" src="'+im.url+'" style="width:100%;margin-top:8px"></audio>';
+      if(im.kind==='video') return '<video controls preload="none" src="'+im.url+'" style="max-width:100%;margin-top:8px;border-radius:8px"></video>';
+      return '<a href="'+im.url+'" target="_blank" style="color:var(--acc);display:inline-block;margin-top:8px">📎 '+esc(im.name)+'</a>'; }).join('')
+  }</div>`).join('');
+  $('#msgs').scrollTop=0;
+}
+function fmtSize(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+async function openArchive(){
+  SEL=null; render(); document.body.classList.add('show-conv');
+  $('#htxt').textContent='Načítavam archív…'; $('#msgs').innerHTML='<div class="empty">…</div>';
+  const r=await fetch('/api/archive'); const d=await r.json();
+  const imgs=d.items.filter(i=>i.kind==='image'); const data=d.items.filter(i=>i.kind!=='image');
+  $('#htxt').innerHTML='📦 Oficiálny archív<div class="sub">'+d.count+' súborov (nenapojené na konverzácie) · '+imgs.length+' obrázkov · '+data.length+' dátových</div>';
+  const af=n=>'/archive-file?name='+encodeURIComponent(n);
+  let html='';
+  if(imgs.length) html+='<div class="gallery">'+imgs.map(i=>'<a class="gi" href="'+af(i.name)+'" target="_blank"><img loading="lazy" src="'+af(i.name)+'"><span>'+esc(i.name)+'</span></a>').join('')+'</div>';
+  if(data.length) html+='<div class="dlist"><h3>Dátové súbory ('+data.length+')</h3>'+data.map(i=>'<a class="dfile" href="'+af(i.name)+'" download><span class="nm">📄 '+esc(i.name)+'</span><span class="sz">'+fmtSize(i.size)+'</span></a>').join('')+'</div>';
+  $('#msgs').innerHTML=html||'<div class="empty">Prázdne</div>'; $('#msgs').scrollTop=0;
+}
+$('#archBtn').onclick=openArchive;
+$('#back').onclick=()=>{ document.body.classList.remove('show-conv'); SEL=null; render(); };
+$('#q').addEventListener('input',()=>{ if(MODE==='search'){MODE='list';} render(); });
+$('#q').addEventListener('keydown',async e=>{ if(e.key==='Enter'){ e.target.blur(); const q=$('#q').value.trim(); if(!q){MODE='list';render();return;}
+  $('#hint').textContent='hľadám v texte…'; const r=await fetch('/api/search?q='+encodeURIComponent(q)); const d=await r.json(); VIEW=d.items; MODE='search'; render(); }});
+$('#proj').onchange=render; $('#sort').onchange=render;
+loadList(); setInterval(()=>{ if(MODE!=='search' && !document.body.classList.contains('show-conv')) loadList(); }, 60000);
+fetch('/api/archive').then(r=>r.json()).then(d=>{ if(d.count) $('#archBtn').textContent='📦 Oficiálny archív ('+d.count+')'; }).catch(()=>{});
+</script>
+</body>
+</html>
