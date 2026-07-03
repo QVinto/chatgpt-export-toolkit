@@ -1,66 +1,65 @@
-# Architektúra
+# Architecture
 
-## Problém
-ChatGPT `backend-api` je za Cloudflare **„managed challenge"** (`cf-mitigated: challenge`).
-Obyčajný `fetch`/`curl` (aj s platným tokenom) dostane **403** s HTML challenge stránkou.
-Upstream nástroj to mylne hlási ako „expired token", hoci token je v poriadku.
+## Problem
+The ChatGPT `backend-api` sits behind a Cloudflare **"managed challenge"** (`cf-mitigated: challenge`).
+A plain `fetch`/`curl` (even with a valid token) gets a **403** with an HTML challenge page.
+The upstream tool mistakenly reports this as an "expired token", even though the token is fine.
 
-## Riešenie: prehliadačom routovaný fetch
-`pw/browser-export.js` spustí **reálny Chromium** (Playwright) pod `xvfb` (headful), ktorý
-Cloudflare challenge prejde automaticky a získa `cf_clearance` cookie. Potom **prepíše
+## Solution: browser-routed fetch
+`pw/browser-export.js` launches a **real Chromium** (Playwright) under `xvfb` (headful), which
+passes the Cloudflare challenge automatically and obtains the `cf_clearance` cookie. It then **overrides
 `globalThis.fetch`**:
 
-- **host `chatgpt.com`** → fetch sa vykoná **vnútri stránky** (`page.evaluate(fetch …)`),
-  teda same-origin s `cf_clearance` + pravým Chrome TLS fingerprintom. Telo sa prenáša
-  ako base64 (funguje pre text aj binárku) a zabalí do `Response`-like objektu.
-- **iný host** (podpísané CDN download URL pre prílohy) → **natívny** `fetch` (bez challenge).
+- **host `chatgpt.com`** → the fetch runs **inside the page** (`page.evaluate(fetch …)`),
+  i.e. same-origin with `cf_clearance` + a genuine Chrome TLS fingerprint. The body is transferred
+  as base64 (works for both text and binary) and wrapped into a `Response`-like object.
+- **other host** (signed CDN download URL for attachments) → **native** `fetch` (no challenge).
 
-Následne `require(tool/lib/cli.js).main()` rozbehne **nezmenený** upstream export — celá
-jeho logika (stránkovanie, projekty, markdown, súbory, resume) funguje, mení sa len
-transportná vrstva.
+Afterwards `require(tool/lib/cli.js).main()` kicks off the **unchanged** upstream export — its entire
+logic (pagination, projects, markdown, files, resume) works; only the transport layer changes.
 
-Pri pretrvávajúcej challenge sa stránka reloadne (až 5×); ak ani tak neprejde, vráti sa
-`503` (prechodná chyba → retry), **nie** auth-fail (aby zbytočne nepýtal nový token).
+If the challenge persists, the page is reloaded (up to 5×); if it still doesn't pass, a
+`503` is returned (transient error → retry), **not** an auth-fail (so it won't needlessly ask for a new token).
 
-## Komponenty
+## Components
 
 ```
-run.sh  (tmux "cgpt", nekonečná slučka)
-  │  čítaj token.txt -> CHATGPT_BEARER_TOKEN (env), account-id z JWT
+run.sh  (tmux "cgpt", infinite loop)
+  │  read token.txt -> CHATGPT_BEARER_TOKEN (env), account-id from JWT
   └─ xvfb-run -a node pw/browser-export.js
-        │  launchPersistentContext(pw/userdata)  -> goto chatgpt.com (prejde CF)
-        │  overenie /backend-api/me  -> log "prihlásený ako <email>"
+        │  launchPersistentContext(pw/userdata)  -> goto chatgpt.com (passes CF)
+        │  auth check /backend-api/me  -> log "logged in as <email>"
         │  globalThis.fetch = browserFetch
-        └─ main() z tool/lib/cli.js  (argv: --non-interactive --include-archived
+        └─ main() from tool/lib/cli.js  (argv: --non-interactive --include-archived
                                        --throttle <.throttle> --output out/ --account-id <jwt>)
-  exit 0 -> "HOTOVO"; 429 -> wait 5m; auth-fail -> čakaj na nový token; iné -> wait 5m
+  exit 0 -> "DONE"; 429 -> wait 5m; auth-fail -> wait for a new token; other -> wait 5m
 ```
 
-- **`browser-export.js`** číta `EXPORT_DIR` z `path.resolve(__dirname, '..')` → priečinok je
-  prenositeľný (funguje pre ľubovoľný názov priečinka / viac účtov).
-- **Throttle** sa NEčíta z kódu, ale zo súboru `.throttle` (+`.min-throttle`) → tempo sa dá
-  meniť medzi reštartmi bez editovania JS.
-- **Account-id** sa ťahá z JWT (`chatgpt_account_id`) → funguje aj pre Business/Team.
-  Pozn.: v Team workspace je account-id zdieľaný; **Bearer token (user `sub`)** určuje, čie
-  konverzácie sa stiahnu, a výstup ide do `out/<user-id>/` (per-používateľ izolované).
+- **`browser-export.js`** reads `EXPORT_DIR` from `path.resolve(__dirname, '..')` → the folder is
+  portable (works for any folder name / multiple accounts).
+- **Throttle** is NOT read from the code, but from the `.throttle` file (+`.min-throttle`) → the pace can be
+  changed between restarts without editing JS.
+- **Account-id** is pulled from the JWT (`chatgpt_account_id`) → works for Business/Team too.
+  Note: in a Team workspace the account-id is shared; the **Bearer token (user `sub`)** determines whose
+  conversations get downloaded, and the output goes to `out/<user-id>/` (per-user isolated).
 
-## Výstup
+## Output
 ```
 out/<user-id>/
-  json/        *.json   (surové konverzácie)
-  *.md /markdown/        (čitateľný markdown)
-  files/                 (prílohy/assety bežných konverzácií)
-  projects/<projekt>/json|files/   (projektové konverzácie a ich prílohy)
+  json/        *.json   (raw conversations)
+  *.md /markdown/        (readable markdown)
+  files/                 (attachments/assets of regular conversations)
+  projects/<project>/json|files/   (project conversations and their attachments)
   conversation-index.json, projects/project-index.json
-  .export-progress.json  (resume stav)
+  .export-progress.json  (resume state)
 ```
 
-## Stavové súbory (v koreni priečinka)
-| Súbor | Význam |
+## State files (in the folder root)
+| File | Meaning |
 |---|---|
-| `.throttle` / `.min-throttle` | aktuálne tempo (s/dopyt), číta `browser-export.js` |
-| `.cooldown-until` | epoch, dokedy NEspúšťať (po lockoute) |
-| `.stable-count` / `.last-count` | controller: koľko čistých kontrol / posledný počet |
-| `.last-probe` | epoch posledného 15 s probe |
-| `.wait-count` | počítadlo pokusov čakania na token |
-| `.runner-state` | posledné nastavené tempo |
+| `.throttle` / `.min-throttle` | current pace (s/request), read by `browser-export.js` |
+| `.cooldown-until` | epoch until which NOT to run (after a lockout) |
+| `.stable-count` / `.last-count` | controller: how many clean checks / last count |
+| `.last-probe` | epoch of the last 15 s probe |
+| `.wait-count` | counter of attempts waiting for a token |
+| `.runner-state` | last set pace |

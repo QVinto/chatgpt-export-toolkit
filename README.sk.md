@@ -1,6 +1,9 @@
 # ChatGPT Export Toolkit (odolný, samo-adaptívny)
 
 > 🇬🇧 English version: [`README.md`](README.md) · AI-agent guide: [`AGENTS.md`](AGENTS.md)
+>
+> Pozn.: kód, logy a podrobná dokumentácia v [`docs/`](docs/) sú po anglicky
+> (toto SK README je len prehľad). Slovenské log hlášky boli nahradené anglickými.
 
 Kompletný, **reprodukovateľný** workflow na stiahnutie **všetkých** ChatGPT konverzácií
 + projektov (vrátane príloh) z účtu — vrátane **Business/Team** — aj keď je `backend-api`

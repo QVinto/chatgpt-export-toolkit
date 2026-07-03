@@ -7,8 +7,9 @@ It downloads **all** ChatGPT conversations + projects (with attachments) of
 one account into `out/`, surviving Cloudflare's managed challenge and
 aggressive per-account rate limits. One folder = one account.
 
-Detailed docs (`docs/`, `prompts/`, `README.sk.md`) are written in **Slovak**;
-this file is the English summary an agent needs to operate the toolkit.
+All docs, code, and logs are in **English**. `README.sk.md` is a Slovak
+translation of the README kept for Slovak users; everything an agent needs to
+operate the toolkit is here and in `docs/`.
 
 ## Golden rules (violating these corrupts data or locks out the account)
 
@@ -38,7 +39,7 @@ run.sh                      # infinite supervisor, meant to live in tmux ($EXPOR
           --non-interactive --include-archived --throttle <.throttle> --output out/ --account-id <from JWT>
 ```
 
-Exit handling by `run.sh`: `exit 0` → done ("HOTOVO"); auth failure
+Exit handling by `run.sh`: `exit 0` → done (prints `DONE`); auth failure
 (`BX_AUTH_FAIL`) → block and poll `token.txt` every 30 s; `429`/other error →
 sleep 5 min and retry.
 
@@ -77,10 +78,10 @@ and `prompts/token-wait-loop.md`; the loop logic reference is
 ## "Done" detection (avoid false positives)
 
 Treat the export as complete only when **all** hold:
-1. log contains `Export Complete` / `HOTOVO`, and
+1. log contains `Export Complete` / `DONE`, and
 2. the runner exited with code 0, and
-3. downloaded count ≈ index count (`status.sh`: "Konverzácie stiahnuté" vs
-   "Konverzácie v hlavnom indexe").
+3. downloaded count ≈ index count (`status.sh`: "Conversations downloaded" vs
+   "Conversations in main index").
 
 Then run `verify.sh` and ZIP `out/`. `exit 0` with far fewer files than the
 index is a **false done** — treat it like a lockout.
@@ -99,17 +100,20 @@ index is a **false done** — treat it like a lockout.
 | `export.log` | full runner log (`====== RESTART` lines delimit runs) |
 | `out/<user-id>/` | the export: `json/`, markdown, `files/`, `projects/`, indexes |
 
-## Slovak log-string glossary
+## Key log markers (grepped by the loop)
 
-| String in logs/scripts | Meaning |
-|---|---|
-| `HOTOVO` | done / export complete |
-| `POTREBUJEM NOVÝ TOKEN` | need a fresh Bearer token in `token.txt` |
-| `overenie OK — prihlásený ako <email>` | auth check OK — logged in as `<email>` |
-| `Konverzácie stiahnuté` / `v hlavnom indexe` | conversations downloaded / in main index |
-| `Cloudflare výzva` | Cloudflare challenge encountered (auto-retries) |
-| `Príčina: vypršaný / neplatný token` | cause: expired/invalid token |
-| `pokus` | attempt |
+| Marker in logs/output | Emitted by | Meaning |
+|---|---|---|
+| `DONE` | `run.sh` | export finished successfully (exit 0) |
+| `Export Complete` | upstream tool | export finished (primary completion signal) |
+| `BX_AUTH_FAIL` | `browser-export.js` | token invalid/expired (auth) — needs a fresh token |
+| `NEED A NEW TOKEN` | `run.sh` | paste a fresh Bearer into `token.txt` |
+| `auth OK — logged in as <email>` | `browser-export.js` | auth check passed — confirms the account |
+| `Rate limited` / `max retries` / `429` | upstream tool | rate limit hit (handled by pace/cooldown) |
+| `====== RESTART` | `restart.sh` | delimits runs in `export.log` |
+| `STATUS=...` | `wait-and-start.sh` | `NO_TOKEN`/`BAD_TOKEN`/`ALREADY_RUNNING`/`STARTED`/`START_FAILED` |
+| `STATE:` / `DECISION:` | controllers | `SET_65`/`SET_90`/`STAY` (stepdown) · `PROBE_NOW`/`REVERT_NOW`/`STAY_15`/`STAY_60` (probe) |
+| `Conversations in main index` | `status.sh` | index count to compare against downloaded count |
 
 ## Gotchas
 

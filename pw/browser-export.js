@@ -1,11 +1,12 @@
 // =============================================================================
 // browser-export.js
-// Spustí pôvodný nástroj export-chatgpt, ale VŠETKY HTTP requesty na chatgpt.com
-// prepošle cez reálny prehliadač (Playwright/Chromium), ktorý prejde Cloudflare
-// "managed challenge". Logika nástroja (stránkovanie, projekty, markdown, súbory,
-// resume) zostáva nedotknutá — meníme len transportnú vrstvu (globálny fetch).
+// Runs the original export-chatgpt tool, but routes ALL HTTP requests to
+// chatgpt.com through a real browser (Playwright/Chromium) that passes the
+// Cloudflare "managed challenge". The tool's logic (pagination, projects,
+// markdown, files, resume) stays untouched — only the transport layer
+// (the global fetch) changes.
 //
-// BEZPEČNOSŤ: pracuje len v ~/chatgpt-export/. NIKDY nepridáva --update.
+// SAFETY: works only inside its own folder. NEVER adds --update.
 // =============================================================================
 'use strict';
 const { chromium } = require('playwright');
@@ -14,7 +15,7 @@ const os = require('os');
 const path = require('path');
 
 const HOME = os.homedir();
-// base-dir = nadradený priečinok tohto skriptu (pw/..) — funguje pre akýkoľvek priečinok
+// base-dir = parent folder of this script (pw/..) — works for any folder name
 const EXPORT_DIR = path.resolve(__dirname, '..');
 const TOOL_DIR = path.join(EXPORT_DIR, 'tool');
 const OUT_DIR = path.join(EXPORT_DIR, 'out');
@@ -30,8 +31,8 @@ function readToken() {
   return t.replace(/[\r\n]/g, '').trim().replace(/^[Bb]earer\s*/, '');
 }
 
-// Throttle sa číta zo súboru (~/chatgpt-export/.throttle) — umožňuje meniť tempo
-// medzi reštartmi (probe 15s vs bezpečných 60s) bez editovania tohto skriptu.
+// The throttle is read from a file (<folder>/.throttle) — this lets you change
+// the pace between restarts (15s probe vs. a safe 60s) without editing this script.
 function readStateNum(name, def) {
   try { const v = fs.readFileSync(path.join(EXPORT_DIR, name), 'utf8').trim(); if (/^\d+$/.test(v)) return v; } catch {}
   return def;
@@ -46,10 +47,10 @@ function extractAccountId(token) {
 }
 
 const TOKEN = readToken();
-if (!TOKEN) { log('CHYBA: prázdny token.'); process.exit(1); }
+if (!TOKEN) { log('ERROR: empty token.'); process.exit(1); }
 const ACC = process.env.ACC || extractAccountId(TOKEN);
 
-// ---- Stav prehliadača -------------------------------------------------------
+// ---- Browser state ----------------------------------------------------------
 let ctx = null;
 let page = null;
 
@@ -70,8 +71,8 @@ async function gotoOrigin() {
   catch (e) { log('goto warn:', e.message); }
 }
 
-// Vykoná fetch VNÚTRI stránky (same-origin -> cf_clearance cookie + Chrome TLS).
-// Telo vracia ako base64 (funguje pre text aj binárku).
+// Performs the fetch INSIDE the page (same-origin -> cf_clearance cookie + Chrome TLS).
+// Returns the body as base64 (works for both text and binary).
 async function pageFetch(url, options) {
   return page.evaluate(async ({ url, options }) => {
     const r = await fetch(url, {
@@ -97,7 +98,7 @@ function looksLikeChallenge(status, headers, bodyText) {
   return /<html|just a moment|enable javascript|cf_chl|attention required|cf-browser-verification/i.test(bodyText || '');
 }
 
-// Zostaví Response-like objekt kompatibilný s tým, čo nástroj používa.
+// Builds a Response-like object compatible with what the tool uses.
 function makeResponse(raw) {
   const buf = Buffer.from(raw.b64, 'base64');
   return {
@@ -113,14 +114,14 @@ function makeResponse(raw) {
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 
-// Náš transport. chatgpt.com -> cez prehliadač; iné hosty (podpísané CDN) -> natívne.
+// Our transport. chatgpt.com -> via the browser; other hosts (signed CDN) -> native.
 async function browserFetch(input, init = {}) {
   const url = typeof input === 'string' ? input : (input && input.url) || String(input);
   let host;
   try { host = new URL(url).host; } catch { return nativeFetch(input, init); }
 
   if (host !== 'chatgpt.com') {
-    // Podpísané download URL na CDN — bez Cloudflare challenge, natívny fetch stačí.
+    // Signed CDN download URL — no Cloudflare challenge, a native fetch is enough.
     return nativeFetch(input, init);
   }
 
@@ -131,15 +132,15 @@ async function browserFetch(input, init = {}) {
     try {
       raw = await pageFetch(url, options);
     } catch (e) {
-      // Stránka mohla byť navigovaná/spadnúť — skús obnoviť kontext.
-      log(`pageFetch chyba (${e.message}) — obnovujem stránku...`);
+      // The page may have navigated/crashed — try to recover the context.
+      log(`pageFetch error (${e.message}) — refreshing the page...`);
       try { await gotoOrigin(); } catch {}
       await new Promise(r => setTimeout(r, 3000));
       continue;
     }
     const bodyText = Buffer.from(raw.b64, 'base64').toString('utf8').slice(0, 600);
     if (looksLikeChallenge(raw.status, raw.headers, bodyText)) {
-      log(`Cloudflare výzva (status ${raw.status}) — reload stránky a skúšam znova (${attempt + 1}/5)...`);
+      log(`Cloudflare challenge (status ${raw.status}) — reloading the page and retrying (${attempt + 1}/5)...`);
       await gotoOrigin();
       await new Promise(r => setTimeout(r, 6000));
       last = raw;
@@ -147,35 +148,35 @@ async function browserFetch(input, init = {}) {
     }
     return makeResponse(raw);
   }
-  // Pretrvávajúca výzva: vráť ako 503, aby to nástroj bral ako prechodnú chybu
-  // (retry / exit !=auth), NIE ako vypršaný token (inak by zbytočne pýtal nový).
-  log('Cloudflare výzvu sa nepodarilo prejsť ani po 5 pokusoch — vraciam 503 (prechodné).');
+  // Persistent challenge: return it as a 503 so the tool treats it as a transient error
+  // (retry / exit != auth), NOT as an expired token (otherwise it would needlessly ask for a new one).
+  log('Could not pass the Cloudflare challenge even after 5 attempts — returning 503 (transient).');
   return makeResponse({ status: 503, statusText: 'Cloudflare challenge', ok: false, headers: {}, b64: Buffer.from('cloudflare challenge unresolved').toString('base64') });
 }
 
-// ---- Hlavný beh -------------------------------------------------------------
+// ---- Main run ---------------------------------------------------------------
 (async () => {
-  log(`štart | token.len=${TOKEN.length} | account-id=${ACC || '(ziadny)'}`);
+  log(`start | token.len=${TOKEN.length} | account-id=${ACC || '(none)'}`);
   await launchBrowser();
 
-  // Overenie, že prehliadač prešiel Cloudflare a token funguje.
+  // Verify the browser passed Cloudflare and the token works.
   const test = await browserFetch(`${ORIGIN}/backend-api/me`, { headers: { Authorization: 'Bearer ' + TOKEN, Accept: 'application/json', ...(ACC ? { 'chatgpt-account-id': ACC } : {}) } });
   if (test.status === 200) {
     const me = await test.json().catch(() => ({}));
-    log(`overenie OK — prihlásený ako ${me.email || me.id || '?'}`);
+    log(`auth OK — logged in as ${me.email || me.id || '?'}`);
   } else if (test.status === 401 || test.status === 403) {
-    log(`overenie zlyhalo na ${test.status} (auth) — token je neplatný/vypršaný.`);
+    log(`auth failed with ${test.status} (auth) — the token is invalid/expired.`);
     console.log('BX_AUTH_FAIL');
     await ctx.close().catch(() => {});
     process.exit(1);
   } else {
-    log(`overenie vrátilo status ${test.status} — pokračujem, nástroj má vlastné retry.`);
+    log(`auth returned status ${test.status} — continuing, the tool has its own retry.`);
   }
 
-  // Nainštaluj náš transport ešte pred načítaním nástroja.
+  // Install our transport before loading the tool.
   globalThis.fetch = browserFetch;
 
-  // Priprav argv pre nástroj (NIKDY --update!).
+  // Prepare argv for the tool (NEVER --update!).
   process.env.CHATGPT_BEARER_TOKEN = TOKEN;
   const argv = [process.argv[0], 'export-chatgpt',
     '--non-interactive',
@@ -185,10 +186,10 @@ async function browserFetch(input, init = {}) {
     '--output', OUT_DIR,
   ];
   if (ACC) { argv.push('--account-id', ACC); }
-  if (process.env.BX_MAX) { argv.push('--max', process.env.BX_MAX); log(`TEST režim: --max ${process.env.BX_MAX}`); }
+  if (process.env.BX_MAX) { argv.push('--max', process.env.BX_MAX); log(`TEST mode: --max ${process.env.BX_MAX}`); }
   process.argv = argv;
 
-  // Zachyť process.exit z nástroja, aby sme korektne zavreli prehliadač.
+  // Intercept the tool's process.exit so we can close the browser cleanly.
   const realExit = process.exit.bind(process);
   process.exit = (code = 0) => { const e = new Error('__TOOL_EXIT__'); e.__code = code; throw e; };
 
@@ -196,14 +197,14 @@ async function browserFetch(input, init = {}) {
   try {
     const { main } = require(path.join(TOOL_DIR, 'lib', 'cli.js'));
     await main();
-    log('nástroj dokončil beh (úspech).');
+    log('tool finished its run (success).');
     exitCode = 0;
   } catch (e) {
     if (e && e.message === '__TOOL_EXIT__') {
       exitCode = e.__code || 0;
-      log(`nástroj zavolal exit(${exitCode}).`);
+      log(`tool called exit(${exitCode}).`);
     } else {
-      log('CHYBA počas behu nástroja:', (e && e.stack) || e);
+      log('ERROR during the tool run:', (e && e.stack) || e);
       exitCode = 1;
     }
   } finally {

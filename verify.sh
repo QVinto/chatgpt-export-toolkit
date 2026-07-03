@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# verify.sh — REÁLNA obsahová validácia stiahnutých dát (nie len počet súborov).
-# Kontroluje: platnosť JSON konverzácií + prítomnosť správ, prázdne/poškodené
-# súbory, a či assety nie sú HTML/Cloudflare stránky uložené ako súbor.
+# verify.sh — REAL content validation of the downloaded data (not just a file count).
+# Checks: valid JSON conversations + presence of messages, empty/corrupted
+# files, and whether assets are HTML/Cloudflare pages saved as a file.
 set -uo pipefail
 OUT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/out"
 UDIR="$(find "$OUT_DIR" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | head -n1)"
-[ -z "$UDIR" ] && { echo "out/ ešte nemá user priečinok"; exit 0; }
+[ -z "$UDIR" ] && { echo "out/ has no user folder yet"; exit 0; }
 
-echo "=== OBSAHOVÁ VALIDÁCIA ($(date '+%H:%M:%S')) ==="
+echo "=== CONTENT VALIDATION ($(date '+%H:%M:%S')) ==="
 node -e '
 const fs=require("fs"), path=require("path");
 const root=process.argv[1];
@@ -26,20 +26,20 @@ for(const d of dirs) for(const f of fs.readdirSync(d)){
   const msgs=nodes.filter(n=>n&&n.message&&n.message.content).length;
   if(msgs>0) okMsg++; else noMsg++;
 }
-console.log("  JSON konverzácie:   "+total+"  | s správami: "+okMsg+" | bez správ: "+noMsg);
-console.log("  prázdne (0B): "+empty.length+(empty.length?(" -> "+empty.slice(0,5).join(", ")):""));
-console.log("  POŠKODENÉ:    "+bad.length+(bad.length?(" -> "+bad.slice(0,5).join(", ")):""));
+console.log("  JSON conversations: "+total+"  | with messages: "+okMsg+" | without messages: "+noMsg);
+console.log("  empty (0B): "+empty.length+(empty.length?(" -> "+empty.slice(0,5).join(", ")):""));
+console.log("  CORRUPTED:  "+bad.length+(bad.length?(" -> "+bad.slice(0,5).join(", ")):""));
 process.exitCode = (bad.length||empty.length)?1:0;
 ' "$UDIR"
 rc=$?
 
-# Assety: 0B + HTML/Cloudflare
+# Assets: 0B + HTML/Cloudflare
 ztotal=$(find "$UDIR" -path '*/files/*' -type f 2>/dev/null | wc -l)
 zzero=$(find "$UDIR" -path '*/files/*' -type f -size 0 2>/dev/null | wc -l)
 zhtml=0
 while IFS= read -r f; do
-  head -c 200 "$f" 2>/dev/null | grep -qiE '<html|cloudflare|just a moment|<!doctype' && { echo "  PODOZRIVÝ ASSET: $f"; zhtml=$((zhtml+1)); }
+  head -c 200 "$f" 2>/dev/null | grep -qiE '<html|cloudflare|just a moment|<!doctype' && { echo "  SUSPICIOUS ASSET: $f"; zhtml=$((zhtml+1)); }
 done < <(find "$UDIR" -path '*/files/*' -type f 2>/dev/null)
-echo "  Assety: $ztotal  | 0B: $zzero | HTML/CF podozrivé: $zhtml"
+echo "  Assets: $ztotal  | 0B: $zzero | HTML/CF suspicious: $zhtml"
 
-[ "$rc" = 0 ] && [ "$zzero" = 0 ] && [ "$zhtml" = 0 ] && echo "  VÝSLEDOK: ✅ OK" || echo "  VÝSLEDOK: ⚠️ pozri vyššie"
+[ "$rc" = 0 ] && [ "$zzero" = 0 ] && [ "$zhtml" = 0 ] && echo "  RESULT: ✅ OK" || echo "  RESULT: ⚠️ see above"

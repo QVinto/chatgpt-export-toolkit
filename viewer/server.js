@@ -1,15 +1,15 @@
 'use strict';
-// Lokálny prehliadač ChatGPT exportu — číta IBA z ~/chatgpt-export/out (read-only).
-// API + statický frontend. Dostupné cez Tailscale (bind 0.0.0.0).
+// Local ChatGPT export viewer — reads ONLY from <folder>/out (read-only).
+// API + static frontend. Binds 0.0.0.0 (only run it on a trusted network).
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// base-dir = nadradený priečinok tohto viewera (funguje pre akýkoľvek priečinok)
+// base-dir = parent folder of this viewer (works for any folder name)
 const E = path.resolve(__dirname, '..');
 const OUT = path.join(E, 'out');
-// Samostatný archív: súbory z oficiálneho OpenAI exportu, ktoré nie sú v našom (nenapojené na konverzácie).
+// Separate archive: files from the official OpenAI export that are not in ours (not linked to conversations).
 const ARCH = path.join(E, 'official-openai', 'new-not-in-our-export');
 const PORT = parseInt(process.env.VIEWER_PORT || '8765', 10);
 
@@ -31,7 +31,7 @@ function convFiles() {
   }
   return out;
 }
-// fileId -> absolútna cesta (obrázky/prílohy)
+// fileId -> absolute path (images/attachments)
 let fmCache = { ts: 0, map: {} };
 function fileMap() {
   if (Date.now() - fmCache.ts < 30000 && Object.keys(fmCache.map).length) return fmCache.map;
@@ -51,7 +51,7 @@ function fileMap() {
 function unesc(s){ try { return JSON.parse('"' + s + '"'); } catch { return s; } }
 function stripPtr(p){ return String(p).replace(/^(sediment|file-service):\/\//,''); }
 
-// rýchla metadata bez plného parse (číta prvých 16KB, regex)
+// quick metadata without a full parse (reads the first 16KB, regex)
 const metaCache = new Map();
 function quickMeta(file, project) {
   let st; try { st = fs.statSync(file); } catch { return null; }
@@ -76,7 +76,7 @@ function listAll() {
     .sort((a,b) => (b.update_time||0) - (a.update_time||0));
 }
 
-// plný parse + linearizácia jednej konverzácie
+// full parse + linearization of a single conversation
 function partsTI(content) {
   const r = { text: '', images: [] };
   if (!content) return r;
@@ -90,9 +90,9 @@ function partsTI(content) {
   if (content.asset_pointer) r.images.push(stripPtr(content.asset_pointer));
   return r;
 }
-// Interné tool-správy, ktoré ChatGPT UI NEzobrazuje (retrieval/search injekcie do kontextu).
+// Internal tool messages that the ChatGPT UI does NOT show (retrieval/search injections into the context).
 const HIDDEN_TOOL_AUTHORS = new Set(['file_search', 'web', 'browser', 'myfiles_browser']);
-// Odstráni citačné značky v private-use Unicode (cite​turn0file0 a pod.), ktoré sa inak zobrazia ako prázdne štvorčeky.
+// Removes citation markers in private-use Unicode (cite​turn0file0 etc.) that would otherwise render as empty boxes.
 function cleanCitations(t){
   if(!t) return t;
   return String(t)
@@ -110,7 +110,7 @@ function linearize(d) {
     const m=node.message; if(!m||!m.content) continue;
     const role=m.author&&m.author.role; if(role==='system') continue;
     if(m.metadata&&m.metadata.is_visually_hidden_from_conversation) continue;
-    // interné nástroje (vyhľadávanie v súboroch/web) — napr. "Make sure to include filecite… to cite this file" — v ChatGPT UI skryté
+    // internal tools (file/web search) — e.g. "Make sure to include filecite… to cite this file" — hidden in the ChatGPT UI
     const aname=(m.author&&m.author.name)||'';
     if(role==='tool' && HIDDEN_TOOL_AUTHORS.has(aname)) continue;
     let {text,images}=partsTI(m.content);
@@ -121,7 +121,7 @@ function linearize(d) {
   return out;
 }
 
-// full-text cache (na hľadanie)
+// full-text cache (for search)
 const textCache = new Map();
 function fullText(file) {
   let st; try { st = fs.statSync(file); } catch { return ''; }
@@ -135,7 +135,7 @@ function fullText(file) {
 // ---------- HTTP ----------
 const MIME = { '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.svg':'image/svg+xml','.pdf':'application/pdf','.wav':'audio/wav','.mp3':'audio/mpeg','.m4a':'audio/mp4','.ogg':'audio/ogg','.webm':'video/webm','.mp4':'video/mp4','.txt':'text/plain; charset=utf-8','.html':'text/html; charset=utf-8','.js':'text/javascript','.css':'text/css','.csv':'text/csv; charset=utf-8','.json':'application/json; charset=utf-8','.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 function assetKind(ext){ ext=(ext||'').toLowerCase(); if(['.png','.jpg','.jpeg','.gif','.webp','.svg'].includes(ext))return'image'; if(['.wav','.mp3','.m4a','.ogg'].includes(ext))return'audio'; if(['.mp4','.webm'].includes(ext))return'video'; return'file'; }
-// Typ + MIME aj pre súbory bez prípony (sniff magických bajtov) — archív má veľa UUID-mien bez koncovky.
+// Type + MIME even for files without an extension (magic-byte sniff) — the archive has many UUID names without a suffix.
 function sniffType(abs, ext){
   if (MIME[ext]) return { mime: MIME[ext], kind: assetKind(ext) };
   try { const fd=fs.openSync(abs,'r'); const b=Buffer.alloc(16); const n=fs.readSync(fd,b,0,16,0); fs.closeSync(fd);
@@ -224,4 +224,4 @@ const server = http.createServer((req, res) => {
     return send(res, 500, 'text/plain', 'error: ' + e.message);
   }
 });
-server.listen(PORT, '0.0.0.0', () => console.log('viewer beží na 0.0.0.0:'+PORT));
+server.listen(PORT, '0.0.0.0', () => console.log('viewer running on 0.0.0.0:'+PORT));

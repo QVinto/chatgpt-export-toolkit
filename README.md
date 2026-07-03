@@ -27,9 +27,9 @@ modify — it only wraps it:
 > ⚠️ Use this only on **your own** data or accounts you are explicitly
 > authorized to export. The toolkit exists for personal data portability.
 
-🇸🇰 Slovenská verzia tohto README: [`README.sk.md`](README.sk.md).
-Detailed docs in [`docs/`](docs/) are currently in Slovak; AI agents (and
-humans in a hurry) get an English operational summary in [`AGENTS.md`](AGENTS.md).
+Detailed docs are in [`docs/`](docs/); AI agents (and humans in a hurry) get a
+concise operational summary in [`AGENTS.md`](AGENTS.md).
+🇸🇰 A Slovak version of this README is in [`README.sk.md`](README.sk.md).
 
 ---
 
@@ -81,7 +81,7 @@ wait-and-start.sh      waits for a token to be pasted, then starts the export
 viewer/                local export browser (plain Node, zero dependencies)
 ```
 
-Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (Slovak).
+Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
@@ -93,7 +93,7 @@ per request**. A fresh, untouched account has a full bucket — that is when a
 **15 s probe** pays off: if the account has fewer than ~250 conversations,
 almost everything downloads before the first `429`; on the first `429` the
 controller switches to 65 s. Sub-60 s bursts on a busy account trigger
-**multi-hour lockouts**. Full lessons learned: [`docs/RATE-LIMITS.md`](docs/RATE-LIMITS.md) (Slovak).
+**multi-hour lockouts**. Full lessons learned: [`docs/RATE-LIMITS.md`](docs/RATE-LIMITS.md).
 
 ---
 
@@ -109,7 +109,7 @@ AI agent) that:
 4. after `Export Complete` runs `verify.sh`, builds the ZIP and ends the loop.
 
 Ready-made prompt templates live in [`prompts/`](prompts/), the full guide in
-[`docs/MONITORING-LOOP.md`](docs/MONITORING-LOOP.md) (Slovak).
+[`docs/MONITORING-LOOP.md`](docs/MONITORING-LOOP.md).
 
 ---
 
@@ -139,7 +139,7 @@ Ready-made prompt templates live in [`prompts/`](prompts/), the full guide in
 | `pw/lockout-test.js` | one-shot test whether a rate-limit lockout has lifted |
 | `pw/probe.js` | one-shot diagnostic: does Playwright pass Cloudflare and does the token authenticate? |
 | `viewer/` | local web viewer (port via `VIEWER_PORT`) |
-| `docs/` | architecture, rate limits, monitoring, reproduction (Slovak) |
+| `docs/` | architecture, rate limits, monitoring, reproduction |
 | `prompts/` | loop prompt templates (monitoring, token wait) |
 | `AGENTS.md` | operational cheat-sheet for AI agents (English) |
 

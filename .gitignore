@@ -1,20 +1,20 @@
-# Upstream nástroj (klonuje setup.sh na pinnutý commit)
+# Upstream tool (setup.sh clones it at a pinned commit)
 /tool/
 
-# Playwright runtime (inštaluje setup.sh)
+# Playwright runtime (setup.sh installs it)
 /pw/node_modules/
 /pw/browsers/
 /pw/userdata/
 /pw/package-lock.json
 
-# Výstup exportu + citlivé / runtime dáta
+# Export output + sensitive / runtime data
 /out/
 /token.txt
 /export.log
 /viewer.log
 *.zip
 
-# Runtime stavové súbory (vytvára setup.sh / skripty)
+# Runtime state files (created by setup.sh / the scripts)
 .throttle
 .min-throttle
 .cooldown-until
@@ -24,7 +24,7 @@
 .wait-count
 .runner-state
 
-# Oficiálny OpenAI export (per-používateľ, necommitovať)
+# Official OpenAI export (per-user, do not commit)
 /official-openai/
 
 # OS

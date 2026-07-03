@@ -1,32 +1,32 @@
-# Monitoring loop — prompt (šablóna)
+# Monitoring loop — prompt (template)
 
-Toto je prompt pre **AI agenta** (napr. Claude Code) spúšťaný cronom/schedulerom v intervale
-podľa fázy (30 min stabilný beh; 1–5 min probe/koniec/cooldown). Pred použitím nahraď
-placeholdery:
+This is a prompt for an **AI agent** (e.g. Claude Code) run by cron/scheduler at an
+interval that depends on the phase (30 min for a stable run; 1–5 min for probe/end/cooldown).
+Before use, replace the placeholders:
 
-- `<DIR>` → absolútna cesta pracovného priečinka (napr. `~/chatgpt-export-mojucet`)
-- `<SESSION>` → názov tmux session (napr. `cgpt` alebo `cgpt-mojucet`)
+- `<DIR>` → absolute path of the working folder (e.g. `~/chatgpt-export-myaccount`)
+- `<SESSION>` → tmux session name (e.g. `cgpt` or `cgpt-myaccount`)
 
-> Probe variant (15 s → 65 s pri prvom 429) je v sekcii **KROK B** nižšie zahrnutý; pre
-> štandardný beh na 65 s sa použije vetva so `stepdown-controller.sh`.
+> The probe variant (15 s → 65 s on the first 429) is included in **STEP B** below; for a
+> standard 65 s run the branch with `stepdown-controller.sh` is used.
 
 ---
 
 ```
-Monitoring + STEP controller ChatGPT exportu (priečinok <DIR>, tmux "<SESSION>", Playwright browser-export.js). Tempo: cieľ/dno 65s, strop 90s (controller riadi); voliteľný probe 15s -> pri prvom 429 prepni na 65s. Throttle mení LEN <DIR>/restart.sh. NIKDY needituj run.sh počas behu, NIKDY dvaja bežci, NIKDY --update.
+Monitoring + STEP controller for the ChatGPT export (folder <DIR>, tmux "<SESSION>", Playwright browser-export.js). Pace: target/floor 65s, ceiling 90s (the controller drives it); optional 15s probe -> on the first 429 switch to 65s. The throttle is changed ONLY by <DIR>/restart.sh. NEVER edit run.sh while it runs, NEVER two runners, NEVER --update.
 
-KROK 0 — COOLDOWN gate: now=$(date +%s); cool=$(cat <DIR>/.cooldown-until 2>/dev/null||echo 0); node beží? (/proc/*/comm==MainThread s cmdline obsahujúcim <DIR>/pw/browser-export). Ak node NEbeží a now<cool -> reportuj "cooldown do $(date -d @$cool +%H:%M)", KONIEC. Ak node NEbeží a now>=cool -> over token.txt neprázdny; reštart bash <DIR>/restart.sh "$(cat <DIR>/.throttle)" "$(cat <DIR>/.min-throttle)". Ak node beží -> A.
+STEP 0 — COOLDOWN gate: now=$(date +%s); cool=$(cat <DIR>/.cooldown-until 2>/dev/null||echo 0); is node running? (/proc/*/comm==MainThread with a cmdline containing <DIR>/pw/browser-export). If node is NOT running and now<cool -> report "cooldown until $(date -d @$cool +%H:%M)", END. If node is NOT running and now>=cool -> verify token.txt is non-empty; restart bash <DIR>/restart.sh "$(cat <DIR>/.throttle)" "$(cat <DIR>/.min-throttle)". If node is running -> A.
 
-KROK A — health: tmux ls|grep <SESSION>; <DIR>/status.sh; nové 429/"max retries" od posledného "====== RESTART" v <DIR>/export.log. Ak treba token (BX_AUTH_FAIL/Token expired/prázdny a node NEbeží) -> VÝRAZNE vypíš, nech vloží Bearer do <DIR>/token.txt. POZNÁMKA: čerstvý token odomkne tvrdý lockout, ale +1/min refill platí ďalej.
+STEP A — health: tmux ls|grep <SESSION>; <DIR>/status.sh; new 429/"max retries" since the last "====== RESTART" in <DIR>/export.log. If a token is needed (BX_AUTH_FAIL/Token expired/empty and node NOT running) -> print PROMINENTLY that a Bearer must be pasted into <DIR>/token.txt. NOTE: a fresh token unlocks a hard lockout, but the +1/min refill still applies.
 
-KROK A2 — LOCKOUT (poistka): ak BEŽÍ ale NULOVÝ postup 2 kontroly po sebe A veľa 429/"max retries" -> zastav bežca (kill tmux <SESSION> + chromium s <DIR>/pw/userdata + príslušné xvfb, rm <DIR>/pw/userdata/Singleton*), echo 90><DIR>/.throttle, echo 90><DIR>/.min-throttle, echo $(( $(date +%s)+3600 ))><DIR>/.cooldown-until, reportuj a navrhni čerstvý token. NEREŠTARTUJ.
+STEP A2 — LOCKOUT (safeguard): if RUNNING but ZERO progress for 2 checks in a row AND many 429/"max retries" -> stop the runner (kill tmux <SESSION> + chromium with <DIR>/pw/userdata + the matching xvfb, rm <DIR>/pw/userdata/Singleton*), echo 90><DIR>/.throttle, echo 90><DIR>/.min-throttle, echo $(( $(date +%s)+3600 ))><DIR>/.cooldown-until, report and suggest a fresh token. DO NOT RESTART.
 
-KROK 5 — HOTOVO len ak v logu "HOTOVO"/Export Complete A node exit 0 A stiahnutých > 0 a počet ≈ "Konverzácie v hlavnom indexe" zo status.sh. Ak exit 0 ale stiahnutých << index (chyby) -> FALOŠNÉ, rieš ako A2. Ak naozaj: <DIR>/verify.sh; ak OK -> ZIP <DIR>/chatgpt-export-$(date +%F).zip z out/, súhrn, UKONČI loop (zruš tento cron + notifikácia). KONIEC.
+STEP 5 — DONE only if the log has "DONE"/Export Complete AND node exit 0 AND downloaded > 0 and the count ≈ "Conversations in main index" from status.sh. If exit 0 but downloaded << index (errors) -> FALSE, handle as A2. If real: <DIR>/verify.sh; if OK -> ZIP <DIR>/chatgpt-export-$(date +%F).zip from out/, summary, END the loop (remove this cron + notification). END.
 
-KROK B — TEMPO: th=$(cat <DIR>/.throttle); n429 = počet nových "Rate limited|max retries" od posledného "====== RESTART".
-  - Ak th=15 A n429>=1 -> PRVÝ 429 v probe: bash <DIR>/restart.sh 65 65; over 1 bežca; echo 0 > <DIR>/.stable-count; report "prvý 429 pri 15s -> prepol som na 65s".
-  - Ak th=15 A n429=0 -> STAY (ťažíme bucket na 15s).
-  - Ak th!=15 -> bash <DIR>/stepdown-controller.sh; podľa DECISION: SET_65->restart.sh 65 65; SET_90->restart.sh 90 90; SET_60->restart.sh 60 60; SET_30->restart.sh 30 30; STAY->nič. (Po reštarte over 1 bežca + echo 0 > <DIR>/.stable-count.)
+STEP B — PACE: th=$(cat <DIR>/.throttle); n429 = count of new "Rate limited|max retries" since the last "====== RESTART".
+  - If th=15 AND n429>=1 -> FIRST 429 in the probe: bash <DIR>/restart.sh 65 65; verify 1 runner; echo 0 > <DIR>/.stable-count; report "first 429 at 15s -> switched to 65s".
+  - If th=15 AND n429=0 -> STAY (exploiting the bucket at 15s).
+  - If th!=15 -> bash <DIR>/stepdown-controller.sh; per DECISION: SET_65->restart.sh 65 65; SET_90->restart.sh 90 90; STAY->nothing. (After a restart verify 1 runner + echo 0 > <DIR>/.stable-count.)
 
-KROK C — report SK: stav, počet stiahnutých, throttle (cat <DIR>/.throttle), 429, čo si spravil (STAY/prepnutie/cooldown). Jeden cron.
+STEP C — report (English): status, downloaded count, throttle (cat <DIR>/.throttle), 429, what you did (STAY/switch/cooldown). One cron.
 ```
