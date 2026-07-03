@@ -27,6 +27,27 @@ Postavené nad [`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/expor
 
 ---
 
+## Prečo to vzniklo
+
+[`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/export-chatgpt) robí tú
+ťažkú prácu — prejde ChatGPT backend API a zapíše na disk každú konverzáciu, projekt
+aj prílohu. Samotný však na reálnom, aktívnom účte export nedokončí, a to z dvoch dôvodov:
+
+- ChatGPT `backend-api` je za Cloudflare **„managed challenge"**, takže obyčajný HTTP
+  klient (aj s platným tokenom) dostane `403` — čo nástroj mylne hlási ako *„expirovaný
+  token"*, hoci token je v poriadku.
+- **Business/Team** účty majú agresívny rate-limit na účet. Naivný beh narazí na `429`
+  a viachodinové lockouty dávno pred dokončením veľkého exportu.
+
+Tento toolkit vznikol, aby dotiahol túto poslednú míľu **bez zásahu do pôvodného
+nástroja**: HTTP nástroja prepošle cez reálny prehliadač (Cloudflare je spokojný),
+tempo drží pod rate-limitom a celý beh stráži, takže veľký export sa dokončí sám cez
+hodiny až dni. Exportná logika ostáva 100 % upstream — pridaná je len transportná
+vrstva a „opatrovanie". Preto `setup.sh` upstream **klonuje** na pinnutý commit (nie
+vendoruje ani neforkuje): kredit a aktualizácie ostávajú pri pôvodnom projekte.
+
+---
+
 ## Rýchly štart
 
 ```bash

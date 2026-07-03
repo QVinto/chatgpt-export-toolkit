@@ -33,6 +33,29 @@ concise operational summary in [`AGENTS.md`](AGENTS.md).
 
 ---
 
+## Why this exists
+
+[`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/export-chatgpt) already
+does the hard part — it walks the ChatGPT backend API and writes every conversation,
+project and attachment to disk. On its own, though, it cannot finish on a real,
+active account, for two reasons:
+
+- ChatGPT's `backend-api` sits behind a Cloudflare **managed challenge**, so a plain
+  HTTP client (even with a valid token) gets a `403` — which the tool misreports as
+  an *"expired token"* even though the token is fine.
+- **Business/Team** accounts enforce an aggressive per-account rate limit. A naive run
+  trips `429`s and multi-hour lockouts long before a large export completes.
+
+This toolkit was built to close that last mile **without modifying the upstream tool**:
+it routes the tool's HTTP through a real browser so Cloudflare is satisfied, paces the
+requests to stay under the rate limit, and supervises the whole run so a large export
+finishes unattended over hours or days. The export logic stays 100% upstream — only the
+transport layer and the babysitting are added here. That is also why `setup.sh` *clones*
+the upstream at a pinned commit instead of vendoring or forking it: full credit and
+updates stay with the original project.
+
+---
+
 ## Quick start
 
 ```bash
