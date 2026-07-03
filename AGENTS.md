@@ -50,8 +50,10 @@ printf '%s' 'eyJ...' > token.txt         # accessToken from https://chatgpt.com/
 EXPORT_SESSION=cgpt bash restart.sh 65 65   # clean start at 65 s/request
 bash status.sh                           # counts: downloaded vs index
 bash stepdown-controller.sh              # prints STATE + DECISION (SET_65 | SET_90 | STAY)
+bash probe-controller.sh                 # prints STATE + DECISION (PROBE_NOW | REVERT_NOW | STAY_15 | STAY_60)
 bash verify.sh                           # content validation (valid JSON, messages present, assets not HTML)
 node pw/lockout-test.js <conversation-id>   # one-shot: has a lockout lifted? (exit 0 = yes)
+node pw/probe.js                         # one-shot: does Playwright pass Cloudflare + token authenticate? (exit 0 = yes)
 EXPORT_SESSION=<s> bash wait-and-start.sh   # token gate; prints STATUS=NO_TOKEN|BAD_TOKEN|ALREADY_RUNNING|STARTED
 ```
 

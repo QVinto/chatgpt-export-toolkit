@@ -131,11 +131,13 @@ Ready-made prompt templates live in [`prompts/`](prompts/), the full guide in
 | `setup.sh` | bootstrap (upstream tool + Playwright + state files) |
 | `run.sh` | resilient supervisor (tmux) |
 | `restart.sh` | clean restart at a given pace (the only way to change the throttle) |
-| `stepdown-controller.sh` | adaptive pace decision |
+| `stepdown-controller.sh` | adaptive pace decision (65 ↔ 90 s ladder) |
+| `probe-controller.sh` | decides when to probe a fresh 15 s burst vs. revert to 60 s (read-only) |
 | `status.sh` / `verify.sh` | counts / content validation |
 | `wait-and-start.sh` | wait for token + start |
 | `pw/browser-export.js` | Cloudflare-bypass fetch proxy + upstream launcher |
 | `pw/lockout-test.js` | one-shot test whether a rate-limit lockout has lifted |
+| `pw/probe.js` | one-shot diagnostic: does Playwright pass Cloudflare and does the token authenticate? |
 | `viewer/` | local web viewer (port via `VIEWER_PORT`) |
 | `docs/` | architecture, rate limits, monitoring, reproduction (Slovak) |
 | `prompts/` | loop prompt templates (monitoring, token wait) |
