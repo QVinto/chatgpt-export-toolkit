@@ -14,7 +14,7 @@
 # =============================================================================
 set -uo pipefail
 
-# base-dir = umiestnenie tohto skriptu (funguje pre akýkoľvek priečinok, napr. -janka)
+# base-dir = umiestnenie tohto skriptu (funguje pre akýkoľvek priečinok)
 EXPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOKEN_FILE="$EXPORT_DIR/token.txt"
 OUT_DIR="$EXPORT_DIR/out"

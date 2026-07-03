@@ -14,7 +14,7 @@ const os = require('os');
 const path = require('path');
 
 const HOME = os.homedir();
-// base-dir = nadradený priečinok tohto skriptu (pw/..) — funguje pre akýkoľvek priečinok (napr. -janka)
+// base-dir = nadradený priečinok tohto skriptu (pw/..) — funguje pre akýkoľvek priečinok
 const EXPORT_DIR = path.resolve(__dirname, '..');
 const TOOL_DIR = path.join(EXPORT_DIR, 'tool');
 const OUT_DIR = path.join(EXPORT_DIR, 'out');

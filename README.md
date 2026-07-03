@@ -1,128 +1,152 @@
-# ChatGPT Export Toolkit (odolný, samo-adaptívny)
+# ChatGPT Export Toolkit
 
-Kompletný, **reprodukovateľný** workflow na stiahnutie **všetkých** ChatGPT konverzácií
-+ projektov (vrátane príloh) z účtu — vrátane **Business/Team** — aj keď je `backend-api`
-za Cloudflare „managed challenge" a účet má agresívny rate-limit.
+Resilient, self-adapting workflow for downloading **all** of your ChatGPT
+conversations and projects — attachments included, **Business/Team** plans
+supported — even when the `backend-api` sits behind a Cloudflare *managed
+challenge* and the account enforces an aggressive rate limit.
 
-Postavené nad [`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/export-chatgpt)
-(commit `4cfc3f2`), ktorý **needitujeme** — len obaľujeme:
+Built on top of [`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/export-chatgpt)
+(pinned commit `4cfc3f2`, MIT), which this toolkit deliberately does **not**
+modify — it only wraps it:
 
-- **Cloudflare bypass** — HTTP nástroja prepošleme cez reálny Chromium (Playwright/xvfb),
-  ktorý prejde challenge a má `cf_clearance` + Chrome TLS.
-- **Samo-adaptívne tempo** — token-bucket throttle controller (15 s probe → 65 s cieľ →
-  90 s strop), automatické spomalenie pri prvom `429`, cooldown pri lockoute.
-- **Odolnosť** — nekonečný supervisor, zotavenie z 429/chýb, čakanie na nový token pri
-  expirácii, ochrana proti falošnému „hotovo".
-- **Automatické monitorovanie cez „loop"** — periodické kontroly (cron/agent) ktoré samy
-  riadia tempo, riešia 429/lockout/expiráciu tokenu a po dokončení spravia ZIP. Viď
-  [`docs/MONITORING-LOOP.md`](docs/MONITORING-LOOP.md).
-- **Obsahová validácia** + **lokálny webový prehliadač** (hľadanie, obrázky, mobil).
+- **Cloudflare bypass** — the tool's HTTP is routed through a real Chromium
+  (Playwright + xvfb) that passes the challenge and carries `cf_clearance`
+  plus a genuine Chrome TLS fingerprint.
+- **Self-adaptive pacing** — a token-bucket throttle controller
+  (15 s probe → 65 s target → 90 s ceiling), automatic slow-down on the first
+  `429`, cooldown after a lockout.
+- **Resilience** — an infinite supervisor loop, recovery from 429s and
+  transient errors, waiting for a fresh token on expiry, and protection
+  against a false "done".
+- **Automated monitoring ("loop")** — periodic checks (cron or an AI agent)
+  that manage the pace on their own, handle 429/lockout/token expiry, and
+  produce the final ZIP. See [`docs/MONITORING-LOOP.md`](docs/MONITORING-LOOP.md).
+- **Content validation** + a **local web viewer** (full-text search, images,
+  mobile-friendly).
 
-> ⚠️ Používaj len na **vlastné** dáta / účty, na ktoré máš oprávnenie.
+> ⚠️ Use this only on **your own** data or accounts you are explicitly
+> authorized to export. The toolkit exists for personal data portability.
+
+🇸🇰 Slovenská verzia tohto README: [`README.sk.md`](README.sk.md).
+Detailed docs in [`docs/`](docs/) are currently in Slovak; AI agents (and
+humans in a hurry) get an English operational summary in [`AGENTS.md`](AGENTS.md).
 
 ---
 
-## Rýchly štart
+## Quick start
 
 ```bash
-# 1) Sprav si pracovnú kópiu (jeden priečinok = jeden účet)
-git clone <toto-repo> chatgpt-export-mojucet && cd chatgpt-export-mojucet
+# 1) Make a working copy (one folder = one account)
+git clone https://github.com/QVinto/chatgpt-export-toolkit.git chatgpt-export-myaccount
+cd chatgpt-export-myaccount
 
-# 2) Bootstrap (naklonuje upstream nástroj, nainštaluje Playwright+Chromium, stavové súbory)
-bash setup.sh 65            # 65 = cieľové tempo s/dopyt; pre čerstvý malý účet skús 15
+# 2) Bootstrap (clones the upstream tool at a pinned commit, installs
+#    Playwright + Chromium, creates state files)
+bash setup.sh 65            # 65 = target pace in s/request; for a fresh small account try 15
 
-# 3) Vlož Bearer token (eyJ...) — len samotný token, bez slova "Bearer"
-#    Z prihláseného chatgpt.com: https://chatgpt.com/api/auth/session -> "accessToken"
+# 3) Paste your Bearer token (eyJ...) — the raw token only, without "Bearer"
+#    From a logged-in chatgpt.com session: https://chatgpt.com/api/auth/session -> "accessToken"
 nano token.txt
 
-# 4) Spusti bežca (v tmux session "cgpt")
+# 4) Start the runner (inside tmux session "cgpt")
 EXPORT_SESSION=cgpt bash restart.sh 65 65
 
-# 5) Sleduj
+# 5) Watch
 bash status.sh
-tmux attach -t cgpt        # Ctrl-b d pre odpojenie
+tmux attach -t cgpt        # Ctrl-b d to detach
 
-# 6) (voliteľne) Webový prehliadač na porte 8765
+# 6) (optional) Local web viewer on port 8765
 VIEWER_PORT=8765 node viewer/server.js
 ```
 
-Viac účtov naraz? Sklonuj repo do viacerých priečinkov a každému daj **iný**
-`EXPORT_SESSION` a `VIEWER_PORT`. Priečinky sú navzájom izolované (vlastné `out/`,
-`pw/userdata`, stavové súbory). Príklad reálneho dvoj-účtového nasadenia v
-[`docs/REPRODUCE.md`](docs/REPRODUCE.md).
+Multiple accounts at once? Clone the repo into several folders and give each
+its own `EXPORT_SESSION` and `VIEWER_PORT`. Folders are fully isolated (own
+`out/`, `pw/userdata`, state files). A real two-account deployment example is
+in [`docs/REPRODUCE.md`](docs/REPRODUCE.md).
 
 ---
 
-## Ako to funguje (stručne)
+## How it works (short version)
 
 ```
 run.sh (supervisor, tmux "cgpt")
   └─ xvfb-run node pw/browser-export.js
-        ├─ spustí Chromium (Playwright) -> prejde Cloudflare
-        ├─ prepíše globalThis.fetch: chatgpt.com -> in-page fetch (cf_clearance), CDN -> native
-        └─ načíta tool/lib/cli.js main() (upstream export, NIKDY --update)
-restart.sh            čistý reštart bežca na zadané tempo (mení .throttle)
-stepdown-controller.sh rozhodne o zmene tempa (DECISION: SET_65/SET_90/STAY...)
-status.sh / verify.sh počty / obsahová validácia
-wait-and-start.sh     čaká na vloženie tokenu a spustí export
-viewer/               lokálny prehliadač exportu (Node, bez závislostí)
+        ├─ launches Chromium (Playwright) -> passes Cloudflare
+        ├─ rewrites globalThis.fetch: chatgpt.com -> in-page fetch (cf_clearance), CDN -> native
+        └─ loads tool/lib/cli.js main() (upstream export, NEVER --update)
+restart.sh             clean restart of the runner at a given pace (writes .throttle)
+stepdown-controller.sh decides on pace changes (DECISION: SET_65/SET_90/STAY...)
+status.sh / verify.sh  counts / content validation
+wait-and-start.sh      waits for a token to be pasted, then starts the export
+viewer/                local export browser (plain Node, zero dependencies)
 ```
 
-Detaily: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (Slovak).
 
 ---
 
-## Rate-limit (prečo to trvá a ako to ladíme)
+## Rate limits (why it takes long and how it is tuned)
 
-Účet má token-bucket ~**250** dopytov + doplňovanie ~**1/min**. Udržateľné tempo je
-preto **~60–65 s/dopyt**. Čerstvý (nedotknutý) účet má plný bucket — vtedy sa oplatí
-**15 s probe**: ak je konverzácií < ~250, stiahnu sa skoro celé skôr, než príde prvý
-`429`; pri prvom `429` controller prepne na 65 s. Sub-60 s nárazy na vyťaženom účte
-spúšťajú **viachodinové lockouty**. Plné poučenia: [`docs/RATE-LIMITS.md`](docs/RATE-LIMITS.md).
-
----
-
-## Automatické monitorovanie („loop") — ODPORÚČANÉ
-
-Export beží **hodiny až dni** (rate-limit, expirácia tokenu). Nehliadkuj ručne — nasaď
-**loop**: periodická kontrola (cron každých 1–30 min, alebo AI agent), ktorá:
-
-1. overí, že bežec žije (a reštartuje cez cooldown gate, ak treba),
-2. spustí **stepdown-controller** a podľa `DECISION` upraví tempo (`restart.sh`),
-3. zachytí `429`/lockout (spomalí/cooldown) a expiráciu tokenu (vypýta nový),
-4. po `Export Complete` spustí `verify.sh`, spraví ZIP a ukončí loop.
-
-Hotové prompty (šablóny) sú v [`prompts/`](prompts/), celý návod v
-[`docs/MONITORING-LOOP.md`](docs/MONITORING-LOOP.md).
+A ChatGPT account behaves like a token bucket of roughly **250 requests**
+refilled at about **1 request/min**, so the sustainable pace is **~60–65 s
+per request**. A fresh, untouched account has a full bucket — that is when a
+**15 s probe** pays off: if the account has fewer than ~250 conversations,
+almost everything downloads before the first `429`; on the first `429` the
+controller switches to 65 s. Sub-60 s bursts on a busy account trigger
+**multi-hour lockouts**. Full lessons learned: [`docs/RATE-LIMITS.md`](docs/RATE-LIMITS.md) (Slovak).
 
 ---
 
-## Bezpečnostné pravidlá (zabudované do skriptov)
+## Automated monitoring ("loop") — RECOMMENDED
 
-1. Pracuj **výhradne** vo vlastnom priečinku. Nikdy nemaž/neprepisuj mimo neho.
-2. **NIKDY `--update`** (prepísalo by stiahnuté dáta). Export len pridáva.
-3. Token cez **env premennú** (`CHATGPT_BEARER_TOKEN`), nie cez CLI argument (únik do `ps`).
-4. **LEN JEDEN bežec** na priečinok (zdieľané `pw/userdata` + `out/` → poškodenie indexu).
-5. **Needituj `run.sh` počas behu** (bash re-readne posunutý offset → spustí nesprávny kód).
+An export runs for **hours to days** (rate limit, token expiry). Don't babysit
+it manually — deploy a **loop**: a periodic check (cron every 1–30 min, or an
+AI agent) that:
+
+1. verifies the runner is alive (and restarts it through the cooldown gate if needed),
+2. runs the **stepdown controller** and adjusts the pace per its `DECISION` (`restart.sh`),
+3. catches `429`s/lockouts (slow down / cooldown) and token expiry (asks for a new one),
+4. after `Export Complete` runs `verify.sh`, builds the ZIP and ends the loop.
+
+Ready-made prompt templates live in [`prompts/`](prompts/), the full guide in
+[`docs/MONITORING-LOOP.md`](docs/MONITORING-LOOP.md) (Slovak).
 
 ---
 
-## Štruktúra
+## Safety rules (baked into the scripts)
 
-| Cesta | Popis |
+1. Work **strictly** inside your own folder. Never delete/overwrite outside it.
+2. **NEVER `--update`** (it would overwrite already downloaded data). The export only adds.
+3. The token is passed via an **env variable** (`CHATGPT_BEARER_TOKEN`), never as
+   a CLI argument (which would leak into `ps`).
+4. **ONLY ONE runner** per folder (shared `pw/userdata` + `out/` → index corruption).
+5. **Never edit `run.sh` while it runs** (bash re-reads at a shifted offset → executes garbage).
+
+---
+
+## Repository layout
+
+| Path | Purpose |
 |---|---|
-| `setup.sh` | bootstrap (upstream + Playwright + stav) |
-| `run.sh` | odolný supervisor (tmux) |
-| `restart.sh` | čistý reštart na zadané tempo (jediná cesta ako meniť throttle) |
-| `stepdown-controller.sh` | adaptívne rozhodnutie o tempe |
-| `status.sh` / `verify.sh` | počty / obsahová validácia |
-| `wait-and-start.sh` | čakanie na token + štart |
-| `pw/browser-export.js` | Cloudflare-bypass fetch proxy + spustenie upstreamu |
-| `pw/lockout-test.js` | jednorazový test, či rate-limit lockout ustúpil |
-| `viewer/` | lokálny webový prehliadač (port cez `VIEWER_PORT`) |
-| `docs/` | architektúra, rate-limity, monitoring, reprodukcia |
-| `prompts/` | šablóny loop promptov (monitoring, čakanie na token) |
+| `setup.sh` | bootstrap (upstream tool + Playwright + state files) |
+| `run.sh` | resilient supervisor (tmux) |
+| `restart.sh` | clean restart at a given pace (the only way to change the throttle) |
+| `stepdown-controller.sh` | adaptive pace decision |
+| `status.sh` / `verify.sh` | counts / content validation |
+| `wait-and-start.sh` | wait for token + start |
+| `pw/browser-export.js` | Cloudflare-bypass fetch proxy + upstream launcher |
+| `pw/lockout-test.js` | one-shot test whether a rate-limit lockout has lifted |
+| `viewer/` | local web viewer (port via `VIEWER_PORT`) |
+| `docs/` | architecture, rate limits, monitoring, reproduction (Slovak) |
+| `prompts/` | loop prompt templates (monitoring, token wait) |
+| `AGENTS.md` | operational cheat-sheet for AI agents (English) |
 
-## Kredit
-Jadro exportu: [`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/export-chatgpt).
-Tento toolkit pridáva Cloudflare bypass, adaptívne tempo, monitoring loop, validáciu a prehliadač.
+---
+
+## Credits & license
+
+- Export core: [`brianjlacy/export-chatgpt`](https://github.com/brianjlacy/export-chatgpt)
+  (MIT). It is **not vendored** — `setup.sh` clones it at the pinned commit
+  `4cfc3f2` into `tool/`, and it keeps its own license.
+- This toolkit adds the Cloudflare bypass, adaptive pacing, the monitoring
+  loop, content validation and the viewer. Licensed under the [MIT License](LICENSE).

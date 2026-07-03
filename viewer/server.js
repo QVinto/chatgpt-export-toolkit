@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// base-dir = nadradený priečinok tohto viewera (funguje pre akýkoľvek priečinok, napr. -janka)
+// base-dir = nadradený priečinok tohto viewera (funguje pre akýkoľvek priečinok)
 const E = path.resolve(__dirname, '..');
 const OUT = path.join(E, 'out');
 // Samostatný archív: súbory z oficiálneho OpenAI exportu, ktoré nie sú v našom (nenapojené na konverzácie).
